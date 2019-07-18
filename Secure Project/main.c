@@ -263,8 +263,32 @@ void asymmetric_auth(void)
 		}
 		
 		if(key_found) {
-			status = atcab_verify_extern(nonce,signature, pub, &verify);
+			status = atcab_verify_extern(nonce,signature, key_store[0].pub_key, &verify);
 			CHECK_STATUS(status);
+			
+			//Step 5.7   
+			const uint8_t transport_key[] = {           
+				0xf2, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x11,          
+				0x11, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x11,     
+				0x11, 0x11, 0x11, 0x2f,         
+				};        
+			uint8_t private_key_slot = 4;   
+			uint8_t transport_key_slot = 2;        
+			//calculate ECDH value   
+			uint8_t ecdh_value[32]; 
+			//pre-master secret (pms)   
+			status = atcab_ecdh_enc(private_key_slot, key_store[0].pub_key, ecdh_value, transport_key, transport_key_slot);        
+			CHECK_STATUS(status);   
+			printf("ECDH Value\r\n"); 
+			printf("Remote Pubic Key * Host Private Key = \r\n"); 
+			print_bytes((uint8_t*)&ecdh_value, 32);
+			printf("\r\n"); 
+			
 		}
 		else{
 			printf("no key found\r\n");
