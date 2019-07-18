@@ -50,13 +50,69 @@ typedef void (*ns_funcptr_void) (void) __attribute__((cmse_nonsecure_call));
  */
 ATCAIfaceCfg cfg_ateccx08a_i2c_host = {
 	.iface_type				= ATCA_I2C_IFACE,
-	.devtype				= ATECC608A,
+	.devtype				= ATECC508A,
 	.atcai2c.slave_address	= 0xC0,
 	.atcai2c.bus			= 1,
 	.atcai2c.baud			= 400000,
 	.wake_delay				= 800,
 	.rx_retries				= 20,
 	.cfg_data              = &I2C_0
+};
+
+
+ATCAIfaceCfg cfg_ateccx08a_i2c_remote = {
+	.iface_type				= ATCA_I2C_IFACE,
+	.devtype				= ATECC608A,
+	.atcai2c.slave_address	= 0xC2,
+	.atcai2c.bus			= 1,
+	.atcai2c.baud			= 400000,
+	.wake_delay				= 800,
+	.rx_retries				= 20,
+	.cfg_data              = &I2C_0
+};
+
+
+typedef struct {
+	uint8_t pub_key[64];
+} asymm_public_key_t;
+
+typedef struct {
+	uint8_t signature[64];
+} asymm_signature_t;
+
+//Step 4.1
+typedef struct {
+	asymm_public_key_t issuer_key;
+	asymm_public_key_t subject_key;
+	asymm_signature_t signature;
+} asymm_certificate_t;
+
+asymm_public_key_t key_store[4] = {
+	
+	//Step 3.5
+	0x67, 0x51, 0x50, 0x54, 0x59, 0x23, 0xdc, 0x6a,
+	0x8c, 0xbc, 0xe5, 0x26, 0x90, 0x04, 0xe8, 0xa5,
+	0x66, 0xbc, 0x12, 0xa8, 0xcc, 0xce, 0xd7, 0xa8,
+	0x6d, 0xf0, 0x9a, 0x5f, 0xd6, 0xb0, 0xd9, 0xf9,
+	0x89, 0x40, 0x45, 0xe5, 0x43, 0xa9, 0xce, 0xe7,
+	0x39, 0x91, 0xb9, 0xe3, 0xd5, 0x55, 0xe7, 0xb2,
+	0x82, 0x76, 0x79, 0x6f, 0x03, 0x4b, 0x40, 0x4c,
+	0x87, 0x48, 0x16, 0xd8, 0xc8, 0xd0, 0x23, 0xe4,
+	//Step 5.7
+
+	//Step 4.4
+
+}; //cut and paste in remote public key
+
+uint8_t pub[64] = {
+	0x67, 0x51, 0x50, 0x54, 0x59, 0x23, 0xdc, 0x6a,
+	0x8c, 0xbc, 0xe5, 0x26, 0x90, 0x04, 0xe8, 0xa5,
+	0x66, 0xbc, 0x12, 0xa8, 0xcc, 0xce, 0xd7, 0xa8,
+	0x6d, 0xf0, 0x9a, 0x5f, 0xd6, 0xb0, 0xd9, 0xf9,
+	0x89, 0x40, 0x45, 0xe5, 0x43, 0xa9, 0xce, 0xe7,
+	0x39, 0x91, 0xb9, 0xe3, 0xd5, 0x55, 0xe7, 0xb2,
+	0x82, 0x76, 0x79, 0x6f, 0x03, 0x4b, 0x40, 0x4c,
+	0x87, 0x48, 0x16, 0xd8, 0xc8, 0xd0, 0x23, 0xe4
 };
 
 /* Local function prototype section --------------------------------------------------------*/
@@ -75,6 +131,8 @@ ATCAIfaceCfg cfg_ateccx08a_i2c_host = {
  */
 static void print_bytes(uint8_t * ptr, uint8_t length);
 
+void asymmetric_auth(void);
+
 int main(void)
 {
 	
@@ -89,6 +147,9 @@ int main(void)
 	/* Initializes MCU, drivers and middleware */
 	atmel_start_init();
 	
+	asymmetric_auth();
+	
+#if 0	
 	sc_ConsolePuts((uint8_t *)"hello world from secure application\r\n");
 	
 	/*Initial TrustRAM and display its content*/
@@ -113,6 +174,8 @@ int main(void)
 	
 	sc_ConsolePuts((uint8_t *)"ATECC508 is initialized. Revision and serial number are stored in Trust Ram\r\n");
 	
+	
+	
 	/* Set non-secure main stack (MSP_NS) */
 	__TZ_set_MSP_NS(*((uint32_t *)(TZ_START_NS)));
 	
@@ -121,6 +184,8 @@ int main(void)
 	
 	/* Start Non-secure Application */
 	NonSecure_ResetHandler();
+#endif
+
 	
 	
 	/* Replace with your application code */
@@ -145,4 +210,71 @@ static void print_bytes(uint8_t * ptr, uint8_t length)
 	}
 	
 	printf("\r\n");
+}
+
+
+void asymmetric_auth(void) 
+{
+
+	printf("CryptoAuthLib Basics Disposable Asymmetric Auth\n\r");
+
+		printf("Authentication in progress\n\r");
+		volatile ATCA_STATUS status;
+		status = atcab_init( &cfg_ateccx08a_i2c_host );
+		CHECK_STATUS(status);
+		printf("Device init complete\n\r");
+
+		uint8_t nonce[32]; 
+		uint8_t signature[64];
+		
+		status = atcab_random((uint8_t*)&nonce);
+		CHECK_STATUS(status);
+		printf("Random from host\r\n");
+		print_bytes((uint8_t*)&nonce, 32);
+		
+		status = atcab_init( &cfg_ateccx08a_i2c_remote );
+		
+		uint8_t slot = 4;
+		status = atcab_sign(slot, (const uint8_t*)&nonce, (uint8_t*)&signature);
+		CHECK_STATUS(status); 
+		printf("Signature from remote\r\n");
+		print_bytes((uint8_t*)&signature, 64);
+		
+		//Step 3.4
+		uint8_t temp_pubk[64];
+		status = atcab_get_pubkey(slot, &temp_pubk); 
+		CHECK_STATUS(status);
+		printf("Remote disposable public key\r\n");
+		print_bytes((uint8_t*)&temp_pubk, 64);
+		//Step 3.6
+		
+		status = atcab_init( &cfg_ateccx08a_i2c_host ); 
+		CHECK_STATUS(status);
+		
+		bool verify = false;
+		bool key_found = false;
+		uint8_t i = 0;
+		
+		for(;i < sizeof(key_store)/sizeof(asymm_public_key_t); i++) {
+			if(memcmp(&key_store[i], &temp_pubk, 64) == 0) {
+				key_found = true; 
+				break;
+			}
+		}
+		
+		if(key_found) {
+			status = atcab_verify_extern(nonce,signature, pub, &verify);
+			CHECK_STATUS(status);
+		}
+		else{
+			printf("no key found\r\n");
+		}
+			
+		if(verify) {
+			printf("Authenticated by host\r\n");
+			} else {
+			printf("Failed to authenticate\r\n");
+		}
+	
+	
 }
