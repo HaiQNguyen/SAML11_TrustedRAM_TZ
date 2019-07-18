@@ -89,7 +89,7 @@ void sc_TRAM_Init(void);
  *
  *  @bug No known bugs.
  */
-void sc_ConsolePuts (uint8_t * string);
+void sc_ConsolePuts (char * string);
 
 /**
  *  @brief Print text in non secure mode
@@ -104,7 +104,7 @@ void sc_ConsolePuts (uint8_t * string);
  *
  *  @bug No known bugs.
  */
-void nsc_ConsolePuts (uint8_t * string);
+void nsc_ConsolePuts (char * string);
 
 /**
  *  @brief Print a bytes on the console terminal in non secure mode
