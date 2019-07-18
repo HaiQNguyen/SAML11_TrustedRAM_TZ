@@ -88,7 +88,7 @@ extern int32_t nsc_ext_irq_init(struct ext_irq_setting irq_setting);
  *
  *  @bug No known bugs.
  */
-extern void nonsecure_ConsolePuts (uint8_t * string);
+extern void nonsecure_ConsolePuts (char * string);
 
 /**
  *  @brief Print a bytes on the console terminal in non secure mode

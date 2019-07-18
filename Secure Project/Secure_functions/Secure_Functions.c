@@ -99,7 +99,7 @@ void sc_ReadWholeRAM(u_int8_t *buff, uint8_t size)
 	sc_TRAM_Read(buff, 128, 0);
 }
 
-void sc_ConsolePuts (uint8_t * string)
+void sc_ConsolePuts (char * string)
 {
 	/* Set display foreground color to green */
 	printf("\033[0;32m");
@@ -107,7 +107,7 @@ void sc_ConsolePuts (uint8_t * string)
 	printf("%s", string);
 }
 
-void nsc_ConsolePuts (uint8_t * string)
+void nsc_ConsolePuts (char * string)
 {
 	/* Set display foreground color to red */
 	printf("\033[0;31m");

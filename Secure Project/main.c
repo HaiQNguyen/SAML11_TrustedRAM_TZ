@@ -50,14 +50,58 @@ typedef void (*ns_funcptr_void) (void) __attribute__((cmse_nonsecure_call));
  */
 ATCAIfaceCfg cfg_ateccx08a_i2c_host = {
 	.iface_type				= ATCA_I2C_IFACE,
-	.devtype				= ATECC608A,
+	.devtype				= ATECC508A,
 	.atcai2c.slave_address	= 0xC0,
 	.atcai2c.bus			= 1,
-	.atcai2c.baud			= 400000,
+	.atcai2c.baud			= 100000,
 	.wake_delay				= 800,
 	.rx_retries				= 20,
 	.cfg_data              = &I2C_0
 };
+
+
+ATCAIfaceCfg cfg_ateccx08a_i2c_remote = {
+	.iface_type				= ATCA_I2C_IFACE,
+	.devtype				= ATECC608A,
+	.atcai2c.slave_address	= 0xC2,
+	.atcai2c.bus			= 1,
+	.atcai2c.baud			= 100000,
+	.wake_delay				= 800,
+	.rx_retries				= 20,
+	.cfg_data              = &I2C_0
+};
+
+typedef struct {
+	uint8_t pub_key[64];
+} asymm_public_key_t;
+
+typedef struct {
+	uint8_t signature[64];
+} asymm_signature_t;
+
+
+typedef struct {
+	asymm_public_key_t issuer_key;
+	asymm_public_key_t subject_key;
+	asymm_signature_t signature;
+} asymm_certificate_t;
+
+asymm_public_key_t key_store[2] = {
+	//remote public key stored in the first slot.
+	0x67, 0x51, 0x50, 0x54, 0x59, 0x23, 0xdc, 0x6a,
+	0x8c, 0xbc, 0xe5, 0x26, 0x90, 0x04, 0xe8, 0xa5,
+	0x66, 0xbc, 0x12, 0xa8, 0xcc, 0xce, 0xd7, 0xa8,
+	0x6d, 0xf0, 0x9a, 0x5f, 0xd6, 0xb0, 0xd9, 0xf9,
+	0x89, 0x40, 0x45, 0xe5, 0x43, 0xa9, 0xce, 0xe7,
+	0x39, 0x91, 0xb9, 0xe3, 0xd5, 0x55, 0xe7, 0xb2,
+	0x82, 0x76, 0x79, 0x6f, 0x03, 0x4b, 0x40, 0x4c,
+	0x87, 0x48, 0x16, 0xd8, 0xc8, 0xd0, 0x23, 0xe4,
+}; 
+
+//calculate ECDH value
+uint8_t ecdh_value[32];
+uint8_t nonce[32];
+uint8_t signature[64];
 
 /* Local function prototype section --------------------------------------------------------*/
 
@@ -74,44 +118,49 @@ ATCAIfaceCfg cfg_ateccx08a_i2c_host = {
  *  @bug No known bugs.
  */
 static void print_bytes(uint8_t * ptr, uint8_t length);
+bool AsymmetricAuth(void);
+ATCA_STATUS ECDH_KeyGen(uint8_t * key_gen);
 
 int main(void)
 {
 	
 	volatile ATCA_STATUS status;
-	uint8_t serial_number[ATCA_SERIAL_NUM_SIZE];
-	uint8_t revision_number[REVISION_SIZE];
+	bool is_auth = false; 
 	uint8_t ram_buff[TRUST_RAM_SIZE];
+	
+	
 	
 	/* Pointer to Non secure reset handler definition*/
 	ns_funcptr_void NonSecure_ResetHandler;
 	
 	/* Initializes MCU, drivers and middleware */
-	atmel_start_init();
-	
-	sc_ConsolePuts((uint8_t *)"hello world from secure application\r\n");
-	
-	/*Initial TrustRAM and display its content*/
+	atmel_start_init();	
 	sc_RTC_Init();
 	sc_TRAM_Init();
+	
+	sc_ConsolePuts("hello world from secure application\r\n");
 	sc_ReadWholeRAM(ram_buff, TRUST_RAM_SIZE);
+	sc_ConsolePuts("Current data in the RAM: \r\n");
 	print_bytes(ram_buff,TRUST_RAM_SIZE);
 	
-	/*Intial ATECC508, read out revision number, serial number and write them to TrustRAM*/
-	status = atcab_init( &cfg_ateccx08a_i2c_host );
-	CHECK_STATUS(status);
 	
-	sc_ConsolePuts((uint8_t *)"Initializing ATECC508\r\n");
+	is_auth = AsymmetricAuth();
+	if(!is_auth){
+		//Authentication fail, stop here
+		return 0;
+	}
 	
-	status = atcab_read_serial_number((uint8_t*)&serial_number);
-	CHECK_STATUS(status);
-	status = atcab_info(revision_number);
-	CHECK_STATUS(status);
+	status = ECDH_KeyGen(ecdh_value);
+	if(ATCA_SUCCESS != status){
+		sc_ConsolePuts("Key generation failed!\r\n");
+		return 0; //no need to go on
+	}
 	
-	sc_TRAM_Write(serial_number, ATCA_SERIAL_NUM_SIZE, DATA_OFFSET_IN_RAM);
-	sc_TRAM_Write(revision_number, REVISION_SIZE, DATA_OFFSET_IN_RAM + ATCA_SERIAL_NUM_SIZE);
+	sc_ConsolePuts("Generated key: \r\n");
+	print_bytes(ecdh_value, 32);
 	
-	sc_ConsolePuts((uint8_t *)"ATECC508 is initialized. Revision and serial number are stored in Trust Ram\r\n");
+	sc_TRAM_Write(ecdh_value, 32, DATA_OFFSET_IN_RAM);
+	sc_ConsolePuts("Key is stored in RAM for usage\r\n");
 	
 	/* Set non-secure main stack (MSP_NS) */
 	__TZ_set_MSP_NS(*((uint32_t *)(TZ_START_NS)));
@@ -145,4 +194,101 @@ static void print_bytes(uint8_t * ptr, uint8_t length)
 	}
 	
 	printf("\r\n");
+}
+
+
+bool AsymmetricAuth(void) 
+{
+	volatile ATCA_STATUS status;
+	
+	uint8_t slot = 4;
+	
+	sc_ConsolePuts("CryptoAuthLib Basics Disposable Asymmetric Authentication\n\r");
+	sc_ConsolePuts("Authentication in progress\n\r");
+	
+	status = atcab_init( &cfg_ateccx08a_i2c_host );
+	CHECK_STATUS(status);
+	sc_ConsolePuts("host init complete\n\r");
+	
+	status = atcab_random((uint8_t*)&nonce);
+	CHECK_STATUS(status);
+	sc_ConsolePuts("Random from host\r\n");
+	print_bytes((uint8_t*)&nonce, 32);
+		
+	status = atcab_init( &cfg_ateccx08a_i2c_remote );
+	CHECK_STATUS(status);
+	sc_ConsolePuts("remote init complete\n\r");
+		
+	
+	status = atcab_sign(slot, (const uint8_t*)&nonce, (uint8_t*)&signature);
+	CHECK_STATUS(status); 
+	sc_ConsolePuts("Signature from remote\r\n");
+	print_bytes((uint8_t*)&signature, 64);
+		
+	//Step 3.4
+	uint8_t temp_pubk[64];
+	status = atcab_get_pubkey(slot, &temp_pubk); 
+	CHECK_STATUS(status);
+	sc_ConsolePuts("Remote disposable public key\r\n");
+	print_bytes((uint8_t*)&temp_pubk, 64);
+	//Step 3.6
+		
+	status = atcab_init( &cfg_ateccx08a_i2c_host ); 
+	CHECK_STATUS(status);
+		
+	bool verify = false;
+	bool key_found = false;
+	uint8_t i = 0;
+	
+	sc_ConsolePuts("Check if remote public key is already existing...\r\n");	
+	for(;i < sizeof(key_store)/sizeof(asymm_public_key_t); i++) {
+		if(memcmp(&key_store[i], &temp_pubk, 64) == 0) {
+			key_found = true; 
+			break;
+		}
+	}
+		
+	if(key_found) {
+		sc_ConsolePuts("Key found!!\r\n");
+		sc_ConsolePuts("Verifying key...\r\n");
+		status = atcab_verify_extern(nonce,signature, key_store[0].pub_key, &verify);
+		CHECK_STATUS(status);	
+	}
+	else{
+		sc_ConsolePuts("no key found\r\n");
+		return false;
+	}
+			
+	if(verify) {
+		sc_ConsolePuts("Authenticated by host\r\n");
+		return true;
+		} else {
+		sc_ConsolePuts("Failed to authenticate\r\n");
+		return false;
+	}
+}
+
+ATCA_STATUS ECDH_KeyGen(uint8_t * key_gen)
+{
+	volatile ATCA_STATUS status;
+	
+	uint8_t private_key_slot = 4;
+	uint8_t transport_key_slot = 2;
+	
+	const uint8_t transport_key[] = {
+		0xf2, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x11,
+		0x11, 0x11, 0x11, 0x2f,
+	};
+	
+	
+	//pre-master secret (pms)
+	status = atcab_ecdh_enc(private_key_slot, key_store[0].pub_key, key_gen, transport_key, transport_key_slot);
+	
+	return status;
 }

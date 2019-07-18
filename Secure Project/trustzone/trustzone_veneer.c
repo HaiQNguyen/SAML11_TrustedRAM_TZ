@@ -104,7 +104,7 @@ int32_t __attribute__((cmse_nonsecure_entry)) nsc_ext_irq_init(struct ext_irq_se
  * and the function declaration into trustzone_veneer.h.
  */
 
-void __attribute__((cmse_nonsecure_entry)) nonsecure_ConsolePuts (uint8_t * string)
+void __attribute__((cmse_nonsecure_entry)) nonsecure_ConsolePuts (char * string)
 {
 	nsc_ConsolePuts (string);
 }
